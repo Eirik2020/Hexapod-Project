@@ -1,7 +1,8 @@
 """
 Python Program for serial communication with the Mini-Maestro 18 RC Servo controller.
 """
-
+import time
+import numpy as np
 
 
 def set_multiple_targets(ser, device_number, targets):
@@ -21,3 +22,22 @@ def set_target_mini_ssc(ser, channel, target):
 
   # Send command to Maestro
   ser.write(command)
+
+def send_path(ser, legs, delay):
+   leg = legs[0]
+   print(leg.servos)
+
+   # Extract leg information
+   for i in range(len(leg.angles)):
+      # Send target information
+      for j in range(len(legs)):
+         angles = legs[j].angles
+         target = legs[j].servos
+         # Convert to target values
+         target_value = ( (angles[i] / (np.pi/2) ) * 254 ).astype(int)
+         set_target_mini_ssc(ser, target[0], target_value[0]) 
+         set_target_mini_ssc(ser, target[1], target_value[1]) 
+         set_target_mini_ssc(ser, target[2], target_value[2]) 
+      
+      # Delay
+      time.sleep(delay)

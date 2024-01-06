@@ -1,78 +1,13 @@
 # Packages
 import serial
 import numpy as np
-from PyMaestro import set_target_mini_ssc
-from kinematics import leg_IK, subdivide_vector, rotate_about_z
+from PyMaestro import set_target_mini_ssc, send_path
+from kinematics import leg_IK, subdivide_vector, rotate_about_z, leg_path
 import time
 np.set_printoptions(precision=4, suppress=True)
 
 
 # Functions
-def leg_path(P_start, V_D, leg_angle, lift, n):
-      # Generate coordinates
-      V_D = rotate_about_z(V_D, leg_angle)
-      P_end = P_start + V_D
-      V_lift = np.array([ 0, 0, lift ])
-      P_start_lift = P_start + V_lift
-      P_end_lift = P_end + V_lift
-      n3 = int(n/3)
-      n = n3 * 3
-
-      # Generate path
-      #points = []
-      # Lift leg
-      swing_points = subdivide_vector(P_start, V_lift, n3)
-      #points[0] = np.concatenate((points, points_buffer)) # Add move points to list.
-
-      # Move leg
-      points_buffer = subdivide_vector(P_start_lift, V_D, n3)
-      swing_points = np.concatenate((swing_points, points_buffer)) # Add move points to list.
-
-      # Lower leg.
-      points_buffer = subdivide_vector(P_end_lift, -V_lift, n3)
-      swing_points = np.concatenate((swing_points, points_buffer)) # Add move points to list.
-
-
-      # Return leg to default position
-      stance_points = subdivide_vector(P_end, -V_D, n)
-
-      return swing_points, stance_points
-
-
-def send_path(ser, legs, odd, delay):
-   leg = legs[0]
-
-   # Extract leg information
-   for i in range(len(leg.swing_angles)):
-      # Send target information
-      leg_amount = len(legs)
-
-      # Check if leg is in stance or walk phase.
-      for j in range(leg_amount):
-         # If user wants odd legs to be perform swing.
-         if (j & 1) == True and odd == True:
-            angles = legs[j].swing_angles
-         elif (j & 1) == False and odd == True:
-            angles = legs[j].stance_angles
-
-         # If user wants even legs to perform swing.
-         if (j & 1) == True and odd == False:
-            angles = legs[j].stance_angles
-         elif (j & 1) == False and odd == False:
-            angles = legs[j].swing_angles
-         
-
-         # Set target servos
-         target = legs[j].servos
-
-         # Convert to target values
-         target_value = ( (angles[i] / (np.pi/2) ) * 254 ).astype(int)
-         set_target_mini_ssc(ser, target[0], target_value[0]) 
-         set_target_mini_ssc(ser, target[1], target_value[1]) 
-         set_target_mini_ssc(ser, target[2], target_value[2]) 
-      
-      # Delay
-      time.sleep(delay)
 
 
 
