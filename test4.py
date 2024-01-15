@@ -29,9 +29,9 @@ class Leg:
 ###   MAIN PROGRAM   ###
 ##  SET-UP  ##
 # Serial Settings
-COM_port = "COM6" # USB COM port connected to servo controller.
-baud_rate = 9600  # Baud rate.
-ser = serial.Serial('COM6', 9600, timeout=1)
+#COM_port = "COM6" # USB COM port connected to servo controller.
+#baud_rate = 9600  # Baud rate.
+#ser = serial.Serial('COM6', 9600, timeout=1)
 #ser.close() # Close the serial connection
 
 # Robot Parameters
@@ -57,6 +57,7 @@ leg_spacing = (2*np.pi) / number_of_legs
 legs = []
 for i in range(number_of_legs):
  leg = Leg(i, i*leg_spacing)
+ print(i*leg_spacing)
  legs.append(leg)
 
 # Assign servos to legs
@@ -100,9 +101,9 @@ legs_T2 = [1, 3, 5]
 
 delay = 0
 
-for i in range(20):
-   send_path(ser, legs, True, delay)
-   send_path(ser, legs, False, delay)
+#for i in range(20):
+   #send_path(ser, legs, True, delay)
+   #send_path(ser, legs, False, delay)
 
 
-ser.close() # Close the serial connection
+#ser.close() # Close the serial connection

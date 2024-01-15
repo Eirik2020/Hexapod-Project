@@ -112,3 +112,32 @@ def leg_FK(origin, angles, links, offset):
    EF = rotate_vector_about_point(EF, J1_ang, np.array([0, 0, 1]), J3)
    
    return np.array([J1, J2, J3, EF])
+
+
+def leg_path(P_start, V_D, leg_angle, lift, n):
+      # Generate coordinates
+      V_D = rotate_about_z(V_D, leg_angle)
+      P_end = P_start + V_D
+      V_lift = np.array([ 0, 0, lift ])
+      P_start_lift = P_start + V_lift
+      P_end_lift = P_end + V_lift
+
+      # Generate path
+      #points = []
+      # Lift leg
+      points = subdivide_vector(P_start, V_lift, n)
+      #points[0] = np.concatenate((points, points_buffer)) # Add move points to list.
+
+      # Move leg
+      points_buffer = subdivide_vector(P_start_lift, V_D, n)
+      points = np.concatenate((points, points_buffer)) # Add move points to list.
+
+      # Lower leg.
+      points_buffer = subdivide_vector(P_end_lift, -V_lift, n)
+      points = np.concatenate((points, points_buffer)) # Add move points to list.
+
+      # Return leg to default position
+      points_buffer = subdivide_vector(P_end, -V_D, n)
+      points = np.concatenate((points, points_buffer)) # Add move points to list.
+
+      return points
