@@ -99,11 +99,11 @@ for i in range(number_of_legs):
 legs_T1 = [0, 2, 4]
 legs_T2 = [1, 3, 5]
 
-delay = 0
+delay = 0.1
 
 for i in range(20):
-   #send_path(ser, legs, True, delay)
-   #send_path(ser, legs, False, delay)
+   send_path(ser, legs, True, delay)
+   send_path(ser, legs, False, delay)
 
 
 ser.close() # Close the serial connection
