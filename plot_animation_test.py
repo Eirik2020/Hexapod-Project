@@ -3,6 +3,12 @@ import numpy as np
 from mpl_toolkits.mplot3d import Axes3D
 from matplotlib import animation
 
+
+
+
+
+
+
 # Create a figure and a 3D axes
 fig = plt.figure()
 ax = fig.add_subplot(projection='3d')
