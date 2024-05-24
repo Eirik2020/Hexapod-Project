@@ -1,0 +1,316 @@
+# Packages
+import serial
+import numpy as np
+import PyMaestro as pm
+import time
+import math
+
+
+def rotate_3D_vector(vector, axis, angle_rad):    
+    # Normalize axis vector
+    axis = axis / np.linalg.norm(axis)
+    
+    # Construct rotation matrix
+    c = np.cos(angle_rad)
+    s = np.sin(angle_rad)
+    ux, uy, uz = axis
+    rotation_matrix = np.array([[c + ux**2*(1-c),    ux*uy*(1-c) - uz*s,  ux*uz*(1-c) + uy*s],
+                                [uy*ux*(1-c) + uz*s, c + uy**2*(1-c),    uy*uz*(1-c) - ux*s],
+                                [uz*ux*(1-c) - uy*s, uz*uy*(1-c) + ux*s,  c + uz**2*(1-c)]])
+    
+    # Apply rotation to vector
+    rotated_vector = np.dot(rotation_matrix, vector)
+    
+    return rotated_vector
+
+def leg_path(start, height, direction, static_leg_angle, phase, n=100):
+    # Rotate direction vector to align with static leg angle
+    direction = rotate_3D_vector(direction, [0, 0, 1], static_leg_angle) # Rotate about z-axis
+
+    # Calculate end point
+    end = start + direction
+
+    # Create division
+    n_half = int(n/2)
+    t = np.linspace(0, np.pi, n_half)  # parameter for lift path
+
+    # Generate foot lift path
+    lift_x = np.linspace(start[0], end[0], n_half)
+    lift_y = np.linspace(start[1], end[1], n_half)
+    lift_z = np.linspace(start[2], end[2], n_half) + height * np.sin(t)
+
+    # Generate foot kick path
+    kick_x = np.linspace(end[0], start[0], n_half)
+    kick_y = np.linspace(end[1], start[1], n_half)
+    kick_z = np.linspace(end[2], start[2], n_half)
+
+    # Combine and return paths
+    lift_path = np.array([lift_x, lift_y, lift_z])
+    kick_path = np.array([kick_x, kick_y, kick_z])
+
+    if phase == 'lift':
+        leg_path = np.concatenate((lift_path, kick_path), axis=1)
+    else: # phase = 'kick'
+        leg_path = np.concatenate((kick_path, lift_path), axis=1)
+
+    # Return leg path
+    return leg_path
+
+def leg_FK(origin_bot, angles, links):
+    """
+    # Hexapod Leg Forward-Kinematics function
+    # Author: Eirik Strandman
+    # Version: V1.0
+
+    # Description:
+    A function that takes in robot origin, joint angles and leg configuration and 
+    calculates the position of the joints for a two-member hexapod leg.
+
+
+    # Inputs
+    - origin_bot: (x,y,z)[mm] - The origin of the robot coordinate system.
+    - angles: [J0, J1, J2, J3][mm] - The joint angles.
+    - links: [L0, L1, L2, L3][mm] - The link lengths of the robot leg.  
+
+    # Output
+    - [[J1_pos, J2_pos, J3_pos, EF_pos](x,y,z)[mm] - Numpy array containing estimated joint positions.
+    """
+
+
+    # Find x-values
+    x2 = links[0] + links[1]
+    x3 = x2 + links[2]*np.cos(angles[2])
+    x4 = x3 + links[3]*np.cos(angles[2] + angles[3])
+
+    # Find z-values
+    z2 = origin_bot[2] + links[2]*np.sin(angles[2])
+    z3 = z2 + links[3]*np.sin(angles[2] + angles[3])
+
+    # Find joint positions
+    J1_pos = np.array([ links[0]*np.cos(angles[0]),  links[0]*np.sin(angles[0]),  origin_bot[2] ])
+    J2_pos = np.array([ x2*np.sin(angles[0] + angles[1]), x2*np.cos(angles[0] + angles[1]), origin_bot[2] ])
+    J3_pos = np.array([ x3*np.sin(angles[0] + angles[1]), x3*np.cos(angles[0] + angles[1]), z2 ])
+    EF_pos = np.array([ x4*np.sin(angles[0] + angles[1]), x4*np.cos(angles[0] + angles[1]), z3 ])
+
+    # Return leg position as 2D array.
+    leg_pos = np.array([J1_pos, J2_pos, J3_pos, EF_pos])
+    return leg_pos
+
+def leg_IK(origin_bot, point, links, leg_angle):
+    """
+    # Hexapod Leg Inverse-Kinematics function
+    # Author: Eirik Strandman
+    # Version: V1.0
+
+    # Description:
+    A function that takes in the robot origin, leg configuration and desired 
+    end-effector location and estimates joint angles for a 2 member hexapod length.
+
+
+    # Inputs
+    - origin_bot: (x,y,z)[mm] - The origin of the robot coordinate system.
+    - point: (x,y,z)[mm] - Desired End-Effector (EF) location.
+    - links: [L0, L1, L2, L3][mm] - The link lengths of the robot leg.
+    - leg_angle: [rad] - The static default angle of the leg relative to the robot body.    
+
+    # Output
+    - [J0_ang, J1_ang, J2_ang, J3_ang][rad] - Numpy array containing estimated joint angles.
+    """
+
+
+    # Calculate leg origin relative to robot origin leg angle.
+    origin_leg = np.array([
+         (links[0]*np.cos(leg_angle) + origin_bot[0]), # x
+         (links[0]*np.sin(leg_angle) + origin_bot[1]), # y
+         (origin_bot[2]) ])                                # z
+
+    # Translate to local leg coordinate system
+    point_leg = point - origin_leg 
+ 
+    # Find joint angle for J1
+    J1_ang = math.atan2(point_leg[1], point_leg[0]) # atan(x,y), note: x and y are reversed so x-axis points forward.
+
+    # Find 2D resultant vector H for P_x and P_y with Link 1 subtracted.
+    H = np.sqrt( (point_leg[0]**2) + (point_leg[1]**2) ) - links[1]
+
+    # Find resultant vector L from H and Z. 
+    L = np.sqrt( (H**2) + (point_leg[2]**2) )
+
+    # Find joint angle J3
+    J3_ang =  math.acos( ( (links[2]**2) + (links[3]**2) - (L**2) ) / (2 * links[2] * links[3]))
+    #print(J3_ang)
+    
+    # Find joint angle J2
+    B = math.acos( ( L**2 + (links[2]**2) - (links[3]**2) ) / ( 2 * L * links[2]))
+    #print(B)
+    A = math.atan2( point_leg[2], H )
+    J2_ang = B - (-A) 
+
+    # Apply offsets
+    J0_ang = leg_angle
+    J1_ang = J1_ang
+    J2_ang = J2_ang 
+    J3_ang = J3_ang - np.pi
+
+    # Store as numpy array
+    angles = np.array([J0_ang, J1_ang, J2_ang, J3_ang])
+    return angles
+
+class leg_info:
+    def __init__(self, leg_spacing, leg_number, origin_bot, links):
+        # Initialize leg angles
+        self.J0_ang = leg_spacing * leg_number
+        self.J1_ang = 0
+        self.J2_ang = np.deg2rad(10)
+        self.J3_ang = np.deg2rad(-10)
+        self.servos = np.arange((((leg_number+1)*3) - 3), ((leg_number+1)*3))
+
+        # Initialize joint positions
+        joint_pos = leg_FK(origin_bot, np.array([self.J0_ang, self.J1_ang, self.J2_ang, self.J3_ang]), links)
+        self.J1_pos = joint_pos[0]
+        self.J2_pos = joint_pos[1]
+        self.J3_pos = joint_pos[2]
+        self.EF_pos = joint_pos[3]
+
+        # Initialize EF path positions
+        self.EF_path = None
+
+        # # Initialize leg path angles
+        self.leg_path_J1_ang = np.array([])
+        self.leg_path_J2_ang = np.array([])
+        self.leg_path_J3_ang = np.array([])
+
+def leg_list_init(num_legs, origin_bot, links):
+    # Calculate leg spacing
+    leg_spacing = ( 2*np.pi ) / num_legs
+
+    # Create empty list
+    leg_list = []
+
+    # Create list of legs
+    for i in range(num_legs):
+
+        # Generate leg objects
+        leg = leg_info(leg_spacing, i, origin_bot, links)
+
+        # Return leg list
+        leg_list.append(leg)
+
+    return leg_list
+
+def path_planner(leg_list, origin_bot, links, step_height, step_direction, offset, n):
+    for i in range(len(leg_list)):
+    # Create leg path
+        if i % 2 == 0: 
+            # Even legs
+            leg_list[i].EF_path = leg_path(leg_list[i].EF_pos, step_height, step_direction, leg_list[i].J0_ang, 'lift', n) # Start with lift phase
+        else:          
+            # Odd legs
+            leg_list[i].EF_path = leg_path(leg_list[i].EF_pos, step_height, step_direction, leg_list[i].J0_ang, 'kick', n) # Start with kick phase
+        
+
+        # Generate leg path angles
+        for j in range(n):
+            # Extract values
+            x = leg_list[i].EF_path[0][j]
+            y = leg_list[i].EF_path[1][j]
+            z = leg_list[i].EF_path[2][j]
+
+            # Calculate angles
+            [J0, J1, J2, J3] = leg_IK(origin_bot, [x, y, z], links, leg_list[i].J0_ang)
+
+            # Append values
+            leg_list[i].leg_path_J1_ang = np.append(leg_list[i].leg_path_J1_ang, (J1 + offset[0]))
+            leg_list[i].leg_path_J2_ang = np.append(leg_list[i].leg_path_J2_ang, (J2 + offset[0]))
+            leg_list[i].leg_path_J3_ang = np.append(leg_list[i].leg_path_J3_ang, (J3 + offset[0]))
+
+def set_target_mini_ssc(ser, channel, target):
+  # Mini-SSC protocol: 0xFF, channel address, 8-bit target
+  command = bytearray([0xFF, channel, target])
+
+  # Send command to Maestro
+  ser.write(command)
+
+def send_path(ser, leg_list, cycle_time):
+   # Find number of subdivisions
+   n = len(leg_list[0].leg_path_J1_ang)
+
+   # Calculate delay between transmissions
+   delay = int(cycle_time / n)
+
+   for i in range(n):
+        for j in range(len(leg_list)):
+            angles = [ leg_list[j].leg_path_J1_ang[i], leg_list[j].leg_path_J2_ang[i], leg_list[j].leg_path_J3_ang[i] ]
+
+            # Convert to target values
+            target_value = ( (angles / (np.pi/2) ) * 254 + 128).astype(int)
+            
+
+            # Send command
+            set_target_mini_ssc(ser, leg_list[j].servos[0], target_value[0]) 
+            set_target_mini_ssc(ser, leg_list[j].servos[1], target_value[1]) 
+            set_target_mini_ssc(ser, leg_list[j].servos[2], target_value[2]) 
+        
+        # Delay
+        time.sleep(delay)
+
+# Serial Settings
+COM_port = "COM5" # USB COM port connected to servo controller.
+baud_rate = 9600  # Baud rate.
+time_out = 1
+connect = True
+
+
+# Configuration
+links = np.array([  72.75,  54.0, 71.0, 73.5 ]) # Link lengths [mm])
+#offset = np.array([0, 45,  45,  135 ])
+#offset = np.deg2rad(offset)
+offset = np.array([ 0,  0,  0,  0])
+start = np.array([0, 0, 0])
+height = 10
+V_D = np.array([10, 0, 0])
+n = 100
+origin_bot = np.array([0, 0, 60])
+num_legs = 6
+num_servos = 18
+cycle_time = 10
+num_step = 5
+
+
+def_angle = leg_IK(origin_bot, [200, 0 , 0], links, 0)
+#def_angle = np.array([0, 0, -np.pi/2])
+print(def_angle)
+
+
+""" MAIN CODE """
+# Generate List
+leg_list = leg_list_init(num_legs, origin_bot, links)
+
+# Set up serial port
+if connect == True:
+    # Open serial port
+    ser = serial.Serial(COM_port, baud_rate, timeout=time_out)
+    print("Connection Established.")
+
+    # Extract angles
+    angles = np.array([def_angle[1], def_angle[2], def_angle[3]])
+    angles = np.array([0, 0, -np.pi/2])
+    #angles[2] = np.pi*2 - angles[2]
+    print(angles)
+
+    # Convert to bits
+    target_value = ( (angles / (np.pi*2) ) * 254 + 128).astype(int)
+    target_value = target_value + np.array([0, 0, 64])
+    print(target_value)
+
+    # Send command
+    set_target_mini_ssc(ser, 0, target_value[0])
+    set_target_mini_ssc(ser, 1, target_value[1])
+    set_target_mini_ssc(ser, 2, target_value[2])
+    print("Command Sent")
+
+    # Close serial port
+    ser.close() # Close the serial connection
+    print("Connection closed.")
+    
+#print(leg_list[0].EF_pos)

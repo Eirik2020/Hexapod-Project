@@ -182,7 +182,7 @@ print(joint_pos[3])
 
 
 
-
+# path --> leg_angles for leg --> leg_bits --> send message.
 
 
 
