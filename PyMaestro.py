@@ -23,16 +23,32 @@ def set_target_mini_ssc(ser, channel, target):
   # Send command to Maestro
   ser.write(command)
 
-def send_path(ser, legs, delay):
+def send_path(ser, legs, odd, delay):
    leg = legs[0]
-   print(leg.servos)
 
    # Extract leg information
-   for i in range(len(leg.angles)):
+   for i in range(len(leg.swing_angles)):
       # Send target information
-      for j in range(len(legs)):
-         angles = legs[j].angles
+      leg_amount = len(legs)
+
+      # Check if leg is in stance or walk phase.
+      for j in range(leg_amount):
+         # If user wants odd legs to be perform swing.
+         if (j & 1) == True and odd == True:
+            angles = legs[j].swing_angles
+         elif (j & 1) == False and odd == True:
+            angles = legs[j].stance_angles
+
+         # If user wants even legs to perform swing.
+         if (j & 1) == True and odd == False:
+            angles = legs[j].stance_angles
+         elif (j & 1) == False and odd == False:
+            angles = legs[j].swing_angles
+         
+
+         # Set target servos
          target = legs[j].servos
+
          # Convert to target values
          target_value = ( (angles[i] / (np.pi/2) ) * 254 ).astype(int)
          set_target_mini_ssc(ser, target[0], target_value[0]) 
